@@ -1,0 +1,43 @@
+import asyncio
+import websockets
+import spidev  # For reading analog values from MCP3008
+import RPi.GPIO as GPIO
+
+# Set up GPIO
+GPIO.setmode(GPIO.BCM)
+
+# Set up SPI for MCP3008
+spi = spidev.SpiDev()
+spi.open(0, 0)
+spi.max_speed_hz = 1350000
+
+def read_adc(channel):
+    adc = spi.xfer2([1, (8 + channel) << 4, 0])
+    data = ((adc[1] & 3) << 8) + adc[2]  # Fixed the bitwise shift here
+    return data
+
+async def monitor_potentiometer(websocket):
+    while True:
+        # Read value from Potentiometer (0-1023)
+        pot_value = read_adc(0)  # Read from ADC channel 0
+        brightness = pot_value / 1023 * 100  # Convert to brightness percentage (0-100%)
+        
+        # Send brightness value to the server
+        await websocket.send(str(brightness))
+        print(f"Sent brightness: {brightness:.2f}%")
+        
+        await asyncio.sleep(0.5)  # Check value every 0.5 seconds
+
+async def main():
+    uri = "ws://192.168.188.143:8765"  # Replace with your server's IP address
+    async with websockets.connect(uri) as websocket:
+        print("Connected to Server")
+        
+        await monitor_potentiometer(websocket)
+
+if __name__ == "__main__":  # Corrected the main guard
+    try:
+        asyncio.run(main())
+    finally:
+        GPIO.cleanup()  # Clean up GPIO on exit
+        spi.close()
